@@ -160,7 +160,7 @@ p3 <- DimPlot_scCustom(seurat_object = sc, group.by = "sample", figure_plot = TR
 ggsave("Clusters_sample.pdf", p3)
 ```
 
-![UMAP_clusterts][(D:/22222/0课题/output/fig0.png)](https://github.com/capuddddd/test1/blob/main/fig0.png)
+![UMAP_clusterts](https://github.com/capuddddd/test1/blob/main/fig0.png)
 ### 1.4 Marker Gene featureplot
 ```r
 # Define marker genes for cell type annotation
