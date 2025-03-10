@@ -205,10 +205,9 @@ for (i in 1:length(gene)) {
   plots[[i]] <- FeaturePlot_scCustom(seurat_object = sc, colors_use = colorRampPalette(c("#3288BD", "white", "#D53E4F"))(50), features = gene[i]) + NoAxes()
 }
 ```
-
-![相对路径](D:/22222/0课题/output/fig3.png)
-![相对路径](D:/22222/0课题/output/fig1.png)
-![相对路径](D:/22222/0课题/output/fig4.png)
+![Dotplot](https://github.com/capuddddd/test1/blob/main/fig3.png)
+![Celltypeplot](https://github.com/capuddddd/test1/blob/main/fig1.png)
+![Featuresplot](https://github.com/capuddddd/test1/blob/main/fig4.png)
 ### 1.5 Sample cell ratio
 ```r
 # Combine feature plots using patchwork
@@ -237,7 +236,7 @@ create_cell_ratio_plot <- function(sc, celltype, output_path) {
 # Create and save cell ratio plot
 create_cell_ratio_plot(sc, "celltype", "/public/home/99017/02users/07ca/coursework/GSE121638_RAW/output")
 ```
-![相对路径](D:/22222/0课题/output/fig5.png)
+![Cellratio](https://github.com/capuddddd/test1/blob/main/fig5.png)
 ### 1.5 Doheatmap plot
 ```r
 names(sc) <- levels(sc)
@@ -257,7 +256,7 @@ visCluster(object = st.data,
            cluster.order = c(1:12))
 dev.off()
 ```
-![相对路径](D:/22222/0课题/output/fig6.png)
+![Doheatmap](https://github.com/capuddddd/test1/blob/main/fig6.png)
 ### 1.6 CD8+ subtype
 ```r
 # Subset CD8+ T cells for further analysis
@@ -288,7 +287,7 @@ sc2 <- FindClusters(sc2, resolution = 0.5)
 p3 <- DimPlot_scCustom(seurat_object = sc2, group.by = "seurat_clusters", figure_plot = TRUE, label = TRUE)
 ggsave("cd8_cluster_umap.pdf", p3)
 ```
-![相对路径](D:/22222/0课题/output/fig7.png)
+![UMAP_CD8_clusters](https://github.com/capuddddd/test1/blob/main/fig7.png)
 ### 1.6 CD8+ subtype slingshot
 ```r
 # Perform trajectory analysis using Slingshot
@@ -327,7 +326,7 @@ for (i in 1:8) {
 }
 dev.off()
 ```
-![相对路径](D:/22222/0课题/output/fig8.png)
+![Slingshot](https://github.com/capuddddd/test1/blob/main/fig8.png)
 ### 1.7 CD8+ cluster1 KEGG pathway
 ```r
 # Find marker genes for a specific cluster
@@ -360,4 +359,4 @@ p <- ggplot(data = KEGG_top10, aes(x = FoldEnrichment, y = pathway)) +
 
 ggsave("test.pdf", p)
 ```
-![相对路径](D:/22222/0课题/output/fig9.png)
+![KEGGdotplot](https://github.com/capuddddd/test1/blob/main/fig9.png)
