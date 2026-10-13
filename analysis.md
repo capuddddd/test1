@@ -5,38 +5,20 @@
 ### 1.1 Organize Data Directory
 
 ```bash
-# Define the data directory
-data_dir="/public/home/99017/02users/07ca/coursework/GSE121638_RAW"
-
-# Get all file names
-files=$(ls "${data_dir}")
-
-# Loop through files
-for file in ${files}; do
-    # Extract sample identifier (e.g., GU0744_P)
-    sample=$(echo "${file}" | grep -oP 'GU[0-9]+_[PT]')
-
-    # If sample identifier is successfully extracted
-    if [[ -n "${sample}" ]]; then
-        # Create corresponding directory (if it doesn't exist)
-        mkdir -p "${data_dir}/${sample}"
-
-        # Move files to the corresponding directory
-        mv "${data_dir}/${file}" "${data_dir}/${sample}/"
-    fi
-done
-
-# Print the organized directory structure
-echo "Organized directory structure:"
-tree "${data_dir}"
-
+# Preview changes; use --apply only after reviewing the list.
+python3 scripts/organize_10x.py ./data/GSE121638_RAW
+python3 scripts/organize_10x.py ./data/GSE121638_RAW --apply
 ```
 ### 1.2 Data preanalysis
 ```r
 library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(grid)
+set.seed(0)
 
 # Define the data directory
-data_dir <- "/public/home/99017/02users/07ca/coursework/GSE121638_RAW"
+data_dir <- "./data/GSE121638_RAW"
 samples <- c("GU0700_T", "GU0715_T", "GU0744_T",
              "GU0700_P", "GU0715_P", "GU0744_P")
 
@@ -64,41 +46,46 @@ sc <- merge(seurat_list[[1]], seurat_list[-1]])
 
 # Print the merged Seurat object
 print(sc)
+```
+
+Example console output (not executable R):
+
+```text
 seurat_list
 $GU0700_T
 
-An object of class Seurat 
-33694 features across 4859 samples within 1 assay 
+An object of class Seurat
+33694 features across 4859 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
 $GU0715_T
-An object of class Seurat 
-33694 features across 4680 samples within 1 assay 
+An object of class Seurat
+33694 features across 4680 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
 $GU0744_T
-An object of class Seurat 
-33694 features across 2715 samples within 1 assay 
+An object of class Seurat
+33694 features across 2715 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
 $GU0700_P
-An object of class Seurat 
-33694 features across 5850 samples within 1 assay 
+An object of class Seurat
+33694 features across 5850 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
 $GU0715_P
-An object of class Seurat 
-33694 features across 5125 samples within 1 assay 
+An object of class Seurat
+33694 features across 5125 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
 $GU0744_P
-An object of class Seurat 
-33694 features across 2459 samples within 1 assay 
+An object of class Seurat
+33694 features across 2459 samples within 1 assay
 Active assay: RNA (33694 features, 0 variable features)
  2 layers present: counts, data
 
@@ -131,12 +118,18 @@ sc <- RunPCA(sc, features = VariableFeatures(object = sc))
 library(harmony)
 sc <- RunHarmony(sc, reduction = "pca", group.by.vars = "sample", reduction.save = "harmony")
 # Determine the optimal number of principal components (PCs)
-pct <- sc[["harmony"]]@stdev / sum(sc[["harmony"]]@stdev) * 100  # Percentage of variance explained by each PC
-cumu <- cumsum(pct)  # Cumulative variance
-co1 <- which(cumu > 90 & pct < 5)[1]  # First PC where cumulative variance > 90% and individual variance < 5%
-co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = TRUE)[1] + 1  # PC where the drop in variance is significant
-pcs <- min(co1, co2)  # Select the minimum number of PCs
-bestpc <- 1:pcs  # Define the range of PCs to use
+select_pcs <- function(stdev) {
+  if (length(stdev) < 2 || any(!is.finite(stdev)) || sum(stdev) <= 0) {
+    stop("Cannot select PCs from the Harmony stdev vector; specify dimensions explicitly.")
+  }
+  pct <- stdev / sum(stdev) * 100
+  first <- which(cumsum(pct) > 90 & pct < 5)
+  drops <- which((head(pct, -1) - tail(pct, -1)) > 0.1)
+  candidates <- c(head(first, 1), if (length(drops)) max(drops) + 1L)
+  if (!length(candidates)) stop("PC heuristic found no candidates; choose dimensions explicitly.")
+  seq_len(min(candidates))
+}
+bestpc <- select_pcs(sc[["harmony"]]@stdev)
 # Run UMAP
 sc <- RunUMAP(sc, reduction = "harmony", dims = bestpc, reduction.name = "umap", min.dist = 0.4)
 # Find neighbors and cluster cells
@@ -160,7 +153,7 @@ p3 <- DimPlot_scCustom(seurat_object = sc, group.by = "sample", figure_plot = TR
 ggsave("Clusters_sample.pdf", p3)
 ```
 
-![UMAP_clusterts](https://github.com/capuddddd/test1/blob/main/fig0.png)
+![UMAP_clusterts](fig0.png)
 ### 1.4 Marker Gene featureplot
 ```r
 # Define marker genes for cell type annotation
@@ -189,8 +182,9 @@ p1 <- DotPlot(sc, features = genelist, cols = c("grey", "red")) +
   labs(x = "", y = "")
 ggsave("dotplot_celltype.pdf", p1, width = 12, height = 5)
 # Annotate cell types
-celltype <- c("NK cell", "Monocyte", "Cytotoxic CD8+ T cell", "Macrophage", "CD8+ T cell", "Effector T cell", "Monocyte", "DC", "Proliferative", "CD4+ T cell", 
+celltype <- c("NK cell", "Monocyte", "Cytotoxic CD8+ T cell", "Macrophage", "CD8+ T cell", "Effector T cell", "Monocyte", "DC", "Proliferative", "CD4+ T cell",
               "NK cell", "DC", "Plasma", "DC", "B cell", "Monocyte", "DC", "Mast cell")
+if (length(celltype) != nlevels(sc)) stop("Review the cluster-to-celltype mapping for this dataset.")
 names(celltype) <- levels(sc)
 sc <- RenameIdents(sc, celltype)  # Rename clusters based on cell type
 sc@meta.data$celltype <- Idents(sc)  # Add cell type information to metadata
@@ -205,17 +199,18 @@ for (i in 1:length(gene)) {
   plots[[i]] <- FeaturePlot_scCustom(seurat_object = sc, colors_use = colorRampPalette(c("#3288BD", "white", "#D53E4F"))(50), features = gene[i]) + NoAxes()
 }
 ```
-![Dotplot](https://github.com/capuddddd/test1/blob/main/fig3.png)
-![Celltypeplot](https://github.com/capuddddd/test1/blob/main/fig1.png)
-![Featuresplot](https://github.com/capuddddd/test1/blob/main/fig4.png)
+![Dotplot](fig3.png)
+![Celltypeplot](fig1.png)
+![Featuresplot](fig4.png)
 ### 1.5 Sample cell ratio
 ```r
 # Combine feature plots using patchwork
 library(patchwork)
 p <- wrap_plots(plots, ncol = 3)
-ggsave(p, file = "featureplot3.pdf", width = 8, height = 9)
+ggsave(filename = "featureplot3.pdf", plot = p, width = 8, height = 9)
 # Define a function to create cell ratio plots
 create_cell_ratio_plot <- function(sc, celltype, output_path) {
+  dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
   cellratio <- table(sc@meta.data[[celltype]], sc@meta.data$sample) %>% as.data.frame()
   colnames(cellratio) <- c("celltype", "sample", "Counts")
   cellratio$celltype <- factor(cellratio$celltype)
@@ -230,34 +225,31 @@ create_cell_ratio_plot <- function(sc, celltype, output_path) {
     theme(axis.text.x = element_text(size = 18, colour = "black")) +
     theme(axis.text.x.bottom = element_text(hjust = 1, vjust = 1, angle = 45))
   # Save the plot
-  ggsave(file.path(output_path, "Cell_ratio_sample.pdf"), egg::set_panel_size(cell_ratio, width = unit(6, "in"), height = unit(3, "in")), 
+  ggsave(file.path(output_path, "Cell_ratio_sample.pdf"), egg::set_panel_size(cell_ratio, width = unit(6, "in"), height = unit(3, "in")),
          width = 12, height = 6, units = "in", dpi = 300)
 }
 # Create and save cell ratio plot
-create_cell_ratio_plot(sc, "celltype", "/public/home/99017/02users/07ca/coursework/GSE121638_RAW/output")
+create_cell_ratio_plot(sc, "celltype", "./data/GSE121638_RAW/output")
 ```
-![Cellratio](https://github.com/capuddddd/test1/blob/main/fig5.png)
-### 1.5 Doheatmap plot
+![Cellratio](fig5.png)
+### 1.6 Heatmap plot
 ```r
-names(sc) <- levels(sc)
-sc <- RenameIdents(sc, seurat_clusters)
-sc.markers.all <- Seurat::FindAllMarkers(sc,
+# Use a copy so the cell-type labels remain available for the CD8 subset below.
+sc_heatmap <- sc
+Idents(sc_heatmap) <- "seurat_clusters"
+sc.markers.all <- Seurat::FindAllMarkers(sc_heatmap,
                                only.pos = TRUE,
                                logfc.threshold = 0.5)
 sc.markers <- sc.markers.all %>%
   dplyr::group_by(cluster) %>%
   dplyr::top_n(n = 10, wt = avg_log2FC)
 head(sc.markers)
-pdf('sc1.pdf',height = 6,width = 8,onefile = F)
-visCluster(object = st.data,
-           plot.type = "heatmap",
-           column_names_rot = 45,
-           markGenes = markGenes,
-           cluster.order = c(1:12))
-dev.off()
+heatmap_genes <- unique(sc.markers$gene)
+p_heatmap <- DoHeatmap(sc_heatmap, features = heatmap_genes)
+ggsave("sc1.pdf", plot = p_heatmap, height = 6, width = 8)
 ```
-![Doheatmap](https://github.com/capuddddd/test1/blob/main/fig6.png)
-### 1.6 CD8+ subtype
+![Doheatmap](fig6.png)
+### 1.7 CD8+ subtype
 ```r
 # Subset CD8+ T cells for further analysis
 sc2 <- subset(x = sc, idents = c("Cytotoxic CD8+ T cell", "CD8+ T cell", "Effector T cell"))
@@ -268,12 +260,7 @@ all.genes <- rownames(sc2)
 sc2 <- ScaleData(sc2, features = all.genes)
 sc2 <- RunPCA(sc2, features = VariableFeatures(object = sc2))
 sc2 <- RunHarmony(sc2, reduction = "pca", group.by.vars = "sample", reduction.save = "harmony")
-pct <- sc2[["harmony"]]@stdev / sum(sc2[["harmony"]]@stdev) * 100
-cumu <- cumsum(pct)
-co1 <- which(cumu > 90 & pct < 5)[1]
-co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = TRUE)[1] + 1
-pcs <- min(co1, co2)
-bestpc <- 1:pcs
+bestpc <- select_pcs(sc2[["harmony"]]@stdev)
 sc2 <- RunUMAP(sc2, reduction = "harmony", dims = bestpc, reduction.name = "umap", min.dist = 0.4)
 sc2 <- FindNeighbors(sc2, reduction = "harmony", dims = bestpc)
 sc2 <- FindClusters(sc2, resolution = seq(0.1, 0.5, by = 0.1))
@@ -287,8 +274,8 @@ sc2 <- FindClusters(sc2, resolution = 0.5)
 p3 <- DimPlot_scCustom(seurat_object = sc2, group.by = "seurat_clusters", figure_plot = TRUE, label = TRUE)
 ggsave("cd8_cluster_umap.pdf", p3)
 ```
-![UMAP_CD8_clusters](https://github.com/capuddddd/test1/blob/main/fig7.png)
-### 1.6 CD8+ subtype slingshot
+![UMAP_CD8_clusters](fig7.png)
+### 1.8 CD8+ subtype slingshot
 ```r
 # Perform trajectory analysis using Slingshot
 library(slingshot)
@@ -307,7 +294,7 @@ cell_pal <- function(cell_vars, pal_fun, ...) {
   }
 }
 
-cell_colors <- cell_pal(sce_slingshot1$seurat_clusters, brewer_pal("qual", "Set2"))
+cell_colors <- cell_pal(sce_slingshot1$seurat_clusters, scales::brewer_pal("qual", "Set2"))
 
 # Plot trajectory
 pdf("clusters.pdf", height = 10, width = 10)
@@ -321,32 +308,38 @@ celltype_label <- sc2@reductions$umap@cell.embeddings %>%
   group_by(seurat_clusters) %>%
   summarise(UMAP1 = median(UMAP_1), UMAP2 = median(UMAP_2))
 
-for (i in 1:8) {
-  text(celltype_label$seurat_clusters[i], x = celltype_label$UMAP1[i] - 1, y = celltype_label$UMAP2[i])
+for (i in seq_len(nrow(celltype_label))) {
+  text(x = celltype_label$UMAP1[i] - 1, y = celltype_label$UMAP2[i],
+       labels = celltype_label$seurat_clusters[i])
 }
 dev.off()
 ```
-![Slingshot](https://github.com/capuddddd/test1/blob/main/fig8.png)
-### 1.7 CD8+ cluster1 KEGG pathway
+![Slingshot](fig8.png)
+### 1.9 CD8+ cluster1 KEGG pathway
 ```r
+library(clusterProfiler)
+library(org.Hs.eg.db)
 # Find marker genes for a specific cluster
 marker1 <- FindMarkers(sc2, ident.1 = "1", ident.2 = NULL, only.pos = TRUE)
 
 # Perform KEGG pathway enrichment analysis
 up <- rownames(marker1)
 up_ENTREZID <- mapIds(x = org.Hs.eg.db, keys = up, column = "ENTREZID", keytype = "SYMBOL", multiVals = "first")
-KEGG_diff <- enrichKEGG(gene = up_ENTREZID, organism = "hsa", pvalueCutoff = 0.05, qvalueCutoff = 0.05, pAdjustMethod = "BH")
+KEGG_diff <- enrichKEGG(gene = unique(na.omit(up_ENTREZID)), organism = "hsa", pvalueCutoff = 0.05, qvalueCutoff = 0.05, pAdjustMethod = "BH")
 KEGG_diff <- setReadable(KEGG_diff, OrgDb = org.Hs.eg.db, keyType = "ENTREZID")
 
-# Calculate enrichment metrics
-KEGG_diff2 <- mutate(KEGG_diff, RichFactor = Count / as.numeric(sub("/\\d+", "", BgRatio)))
-KEGG_diff2 <- mutate(KEGG_diff2, FoldEnrichment = parse_ratio(GeneRatio) / parse_ratio(BgRatio)))
-
-# Save KEGG results
-write.csv(KEGG_diff2@result, file = "KEGG_diff.csv")
-
-# Plot top 10 enriched KEGG pathways
-KEGG_top10 <- KEGG_diff2@result[1:10,]
+# Work with a data frame rather than treating mutate() output as an S4 object.
+parse_ratio <- function(values) {
+  vapply(strsplit(as.character(values), "/", fixed = TRUE), function(parts) {
+    as.numeric(parts[[1]]) / as.numeric(parts[[2]])
+  }, numeric(1))
+}
+KEGG_diff2 <- as.data.frame(KEGG_diff)
+if (nrow(KEGG_diff2) == 0) stop("No KEGG pathways passed the selected thresholds.")
+KEGG_diff2$RichFactor <- KEGG_diff2$Count / as.numeric(sub("/.*", "", KEGG_diff2$BgRatio))
+KEGG_diff2$FoldEnrichment <- parse_ratio(KEGG_diff2$GeneRatio) / parse_ratio(KEGG_diff2$BgRatio)
+write.csv(KEGG_diff2, file = "KEGG_diff.csv", row.names = FALSE)
+KEGG_top10 <- head(KEGG_diff2, 10)
 KEGG_top10$pathway <- factor(KEGG_top10$Description, levels = rev(KEGG_top10$Description))
 mytheme <- theme(axis.title = element_text(size = 13), axis.text = element_text(size = 11), plot.title = element_text(size = 14, hjust = 0.5, face = "bold"), legend.title = element_text(size = 13), legend.text = element_text(size = 11))
 
@@ -359,4 +352,4 @@ p <- ggplot(data = KEGG_top10, aes(x = FoldEnrichment, y = pathway)) +
 
 ggsave("test.pdf", p)
 ```
-![KEGGdotplot](https://github.com/capuddddd/test1/blob/main/fig9.png)
+![KEGGdotplot](fig9.png)
